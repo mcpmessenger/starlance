@@ -83,6 +83,8 @@ body[data-boss="1"] #comm{top:calc(env(safe-area-inset-top,0px) + 100px)}
 .tag{margin:12px 0 28px;font-size:12px;letter-spacing:.34em;color:var(--dim);min-height:1.2em}
 .go{appearance:none;border:2px solid var(--accent);background:rgba(77,225,255,.14);color:var(--ink);padding:14px 36px;font-family:var(--font);font-weight:700;font-size:18px;letter-spacing:.3em;text-indent:.3em;border-radius:6px;cursor:pointer;touch-action:manipulation}
 .go:hover{background:rgba(77,225,255,.26)}
+#tiltBtn{display:none;margin-top:14px;padding:10px 24px;font-size:13px}
+html.touch #tiltBtn{display:inline-block}
 .how{margin-top:28px;color:var(--dim);font-size:13px;line-height:1.75;letter-spacing:.04em}
 .how b{color:var(--ink);letter-spacing:.12em;font-size:11px;margin-right:4px}
 .how .tc{display:none}
@@ -141,10 +143,11 @@ html.touch .how .tc{display:block}
     <div class="card">
       <h1 id="sTitle">STARLANCE</h1>
       <p class="tag" id="sTag">DEFEND THE LYRA BELT</p>
-      <button id="go" class="go" type="button">LAUNCH</button>
+      <button id="go" class="go" type="button">LAUNCH</button><br>
+      <button id="tiltBtn" class="go" type="button">TILT STEERING: OFF</button>
       <div class="how" id="how">
-        <div class="kb"><b>MOVE</b> WASD / arrows &nbsp; <b>FIRE</b> hold Space &nbsp; <b>ROLL</b> Q / E or double-tap left / right<br><b>BOMB</b> X &nbsp; <b>BOOST</b> Shift &nbsp; <b>PAUSE</b> P</div>
-        <div class="tc"><b>MOVE</b> drag on the left half &nbsp; <b>FIRE</b> automatic<br><b>ROLL</b> deflects enemy shots &nbsp; <b>BOMB</b> clears the screen</div>
+        <div class="kb"><b>MOVE</b> WASD / arrows &nbsp; <b>FIRE</b> hold Space &nbsp; <b>ROLL</b> Q / E or double-tap left / right<br><b>BOMB</b> X &nbsp; <b>BOOST</b> Shift &nbsp; <b>PAUSE</b> P<br><b>GAMEPAD</b> left stick steers &nbsp; <b>A</b> fire &nbsp; <b>LB / RB</b> roll &nbsp; <b>Y</b> bomb &nbsp; <b>LT</b> boost</div>
+        <div class="tc"><b>MOVE</b> drag on the left half, or enable TILT and steer by tilting your phone &nbsp; <b>FIRE</b> automatic<br><b>ROLL</b> deflects enemy shots &nbsp; <b>BOMB</b> clears the screen</div>
         <div>Fly through gold rings to repair your shield.</div>
       </div>
     </div>
@@ -167,7 +170,7 @@ const GOD=/[?&]god\b/.test(location.search);
 const rootEl=document.documentElement;
 
 const el={};
-['sc','stg','shBar','shNum','bossWrap','bossBar','bombs','progBar','banner','bT','bS','comm','cWho','cMsg','fxHit','fxFlash','screen','sTitle','sTag','go','how','pad','stick','knob','stickHint','btnRoll','btnBomb','bombN','pauseBtn','muteBtn'].forEach(k=>{el[k]=$(k);});
+['sc','stg','shBar','shNum','bossWrap','bossBar','bombs','progBar','banner','bT','bS','comm','cWho','cMsg','fxHit','fxFlash','screen','sTitle','sTag','go','how','pad','stick','knob','stickHint','btnRoll','btnBomb','bombN','pauseBtn','muteBtn','tiltBtn'].forEach(k=>{el[k]=$(k);});
 
 let touchMode=false;
 try{ touchMode=window.matchMedia('(pointer: coarse)').matches; }catch(_){}
@@ -601,11 +604,11 @@ function bossDie(e){
 }
 
 /* ---- rings ---- */
-const ringGeo=new THREE.TorusGeometry(2.4,.3,10,28);
+const ringGeo=new THREE.TorusGeometry(3.4,.38,10,32);
 function addRingSet(){
-  const cx=rand(-FX*.55,FX*.55), cy=rand(-FY*.4,FY*.4), set={total:5,got:0,passed:0};
-  for(let i=0;i<5;i++){
-    const x=clamp(cx+Math.sin(i*.9)*6,-FX,FX), y=clamp(cy+(i-2)*1.6,-FY,FY);
+  const cx=rand(-FX*.55,FX*.55), cy=rand(-FY*.4,FY*.4), set={total:7,got:0,passed:0};
+  for(let i=0;i<7;i++){
+    const x=clamp(cx+Math.sin(i*.9)*6,-FX,FX), y=clamp(cy+(i-3)*1.6,-FY,FY);
     const m=new THREE.Mesh(ringGeo,M.ring); m.position.set(x,y,-380-i*30); scene.add(m);
     rings.push({m,p:m.position,set,prevZ:m.position.z,done:false});
   }
@@ -648,7 +651,7 @@ function buildScript(s){
   if(s>=2) pool.push('gun'); if(s>=3) pool.push('gun','swoop');
   const n=8+Math.min(8,s*2);
   for(let i=0;i<n;i++){
-    if(i%4===2) add(PAT.rings);
+    if(i%3===2) add(PAT.rings);
     const k=pool[Math.floor(Math.random()*pool.length)]; add(PAT[k]);
   }
   scriptEnd=t; return ev;
@@ -721,6 +724,39 @@ function shoot(){
 /* ================= input ================= */
 const keys={left:false,right:false,up:false,down:false,fire:false,boost:false};
 const touch={x:0,y:0};
+const pad={x:0,y:0,fire:false,boost:false,prev:{}};
+const tilt={x:0,y:0,on:false,b0:null,g0:null};
+function pollPad(){
+  pad.x=pad.y=0; pad.fire=false; pad.boost=false;
+  let gp=null;
+  try{ const gs=navigator.getGamepads?navigator.getGamepads():[]; for(let i=0;i<gs.length;i++){ if(gs[i]&&gs[i].connected){ gp=gs[i]; break; } } }catch(_){}
+  if(!gp) return;
+  const dz=v=>{ const a=Math.abs(v); return a<.15?0:(v-(v>0?.15:-.15))/(1-.15); };
+  pad.x=dz(gp.axes[0]||0); pad.y=-dz(gp.axes[1]||0);
+  const b=i=>!!(gp.buttons[i]&&gp.buttons[i].pressed);
+  pad.fire=b(0)||b(7); pad.boost=b(6);
+  const edge=i=>{ const now=b(i), was=!!pad.prev[i]; pad.prev[i]=now; return now&&!was; };
+  if(screenKind){ if(edge(0)||edge(9)) el.go.click(); return; }
+  if(state!=='play') return;
+  if(edge(4)) startRoll(-1);
+  if(edge(5)) startRoll(1);
+  if(edge(1)) rollAuto();
+  if(edge(3)) useBomb();
+  if(edge(9)) togglePause();
+}
+function onTilt(e){
+  if(!tilt.on||e.beta===null||e.gamma===null) return;
+  if(tilt.b0===null){ tilt.b0=e.beta; tilt.g0=e.gamma; }
+  const db=e.beta-tilt.b0, dg=e.gamma-tilt.g0;
+  const ang=(screen.orientation&&typeof screen.orientation.angle==='number')?screen.orientation.angle:(window.orientation||0);
+  let sx, sy;
+  if(ang===90){ sx=db; sy=dg; }
+  else if(ang===270||ang===-90){ sx=-db; sy=-dg; }
+  else if(ang===180){ sx=-dg; sy=-db; }
+  else { sx=dg; sy=db; }
+  const R=22; /* degrees of tilt for full deflection */
+  tilt.x=clamp(sx/R,-1,1); tilt.y=clamp(-sy/R,-1,1);
+}
 let mouseFire=false, lastTapL=0, lastTapR=0;
 const KEYMAP={ArrowLeft:'left',KeyA:'left',ArrowRight:'right',KeyD:'right',ArrowUp:'up',KeyW:'up',ArrowDown:'down',KeyS:'down'};
 window.addEventListener('keydown',e=>{
@@ -787,13 +823,32 @@ function bindBtn(node,fn){
 bindBtn(el.btnRoll,rollAuto);
 bindBtn(el.btnBomb,useBomb);
 el.pauseBtn.addEventListener('click',()=>togglePause());
+async function enableTilt(){
+  try{
+    if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
+      const r=await DeviceOrientationEvent.requestPermission();
+      if(r!=='granted'){ el.tiltBtn.textContent='TILT: BLOCKED BY BROWSER'; return; }
+    }
+  }catch(_){}
+  tilt.on=true; tilt.b0=null; tilt.g0=null; /* calibrate on the next sensor event */
+  window.addEventListener('deviceorientation',onTilt);
+  el.tiltBtn.textContent='TILT STEERING: ON';
+}
+el.tiltBtn.addEventListener('click',()=>{
+  audioInit();
+  if(tilt.on){
+    tilt.on=false; tilt.x=tilt.y=0;
+    window.removeEventListener('deviceorientation',onTilt);
+    el.tiltBtn.textContent='TILT STEERING: OFF';
+  } else enableTilt();
+});
 el.muteBtn.addEventListener('click',()=>{
   muted=!muted; el.muteBtn.classList.toggle('muted',muted); el.muteBtn.setAttribute('aria-label',muted?'Unmute sound':'Mute sound');
   if(master) master.gain.value=muted?0:.5; audioInit();
 });
 el.go.addEventListener('pointerdown',e=>{ if(e.pointerType==='touch'||e.pointerType==='pen') setTouchMode(true); else if(e.pointerType==='mouse') setTouchMode(false); });
 el.go.addEventListener('click',()=>{
-  el.go.blur(); audioInit();
+  el.go.blur(); audioInit(); if(tilt.on){ tilt.b0=null; tilt.g0=null; }
   if(screenKind==='pause') resumeGame(); else if(screenKind) startGame();
 });
 document.addEventListener('visibilitychange',()=>{ if(document.hidden&&state==='play') pauseGame(); });
@@ -856,14 +911,14 @@ function nextStage(){
 /* ================= update ================= */
 function ease(p){ return p<.5?2*p*p:1-2*(1-p)*(1-p); }
 function updatePlayer(dt){
-  let ix=(keys.right?1:0)-(keys.left?1:0)+touch.x, iy=(keys.up?1:0)-(keys.down?1:0)-touch.y;
+  let ix=(keys.right?1:0)-(keys.left?1:0)+touch.x+pad.x+(stickId===null?tilt.x:0), iy=(keys.up?1:0)-(keys.down?1:0)-touch.y+pad.y+(stickId===null?tilt.y:0);
   const l=Math.hypot(ix,iy); if(l>1){ ix/=l; iy/=l; }
   const k=1-Math.exp(-dt*9);
   ship.vx+=(ix*25-ship.vx)*k; ship.vy+=(iy*22-ship.vy)*k;
   ship.x+=ship.vx*dt; ship.y+=ship.vy*dt;
   if(ship.x>FX){ ship.x=FX; ship.vx=Math.min(ship.vx,0); } else if(ship.x<-FX){ ship.x=-FX; ship.vx=Math.max(ship.vx,0); }
   if(ship.y>FY){ ship.y=FY; ship.vy=Math.min(ship.vy,0); } else if(ship.y<-FY){ ship.y=-FY; ship.vy=Math.max(ship.vy,0); }
-  const want=keys.boost&&ship.boost>.05; ship.boosting=want; ship.boost=clamp(ship.boost+(want?-.45:.22)*dt,0,1);
+  const want=(keys.boost||pad.boost)&&ship.boost>.05; ship.boosting=want; ship.boost=clamp(ship.boost+(want?-.45:.22)*dt,0,1);
   if(ship.rollCd>0) ship.rollCd-=dt;
   if(ship.invuln>0) ship.invuln-=dt;
   let rollA=0;
@@ -877,7 +932,7 @@ function updatePlayer(dt){
   const n=ship.boosting?3:1;
   for(let i=0;i<n;i++) spawnP(ship.x+rand(-.15,.15),ship.y+rand(-.15,.15),2.2,rand(-1.5,1.5),rand(-1.5,1.5),30+rand(0,16),.35,.3,.8,1);
   ship.fireT-=dt;
-  if((keys.fire||mouseFire||touchMode)&&ship.fireT<=0) shoot();
+  if((keys.fire||mouseFire||touchMode||pad.fire)&&ship.fireT<=0) shoot();
 }
 function updateDirector(dt){
   if(phase==='stage'){
@@ -940,7 +995,7 @@ function updateRings(dt){
     const r=rings[i]; r.prevZ=r.p.z; r.p.z+=36*sp*dt; r.m.rotation.z+=dt*2;
     if(!r.done&&state==='play'&&r.prevZ<=0&&r.p.z>=0){
       r.done=true; r.set.passed++;
-      if(Math.hypot(r.p.x-ship.x,r.p.y-ship.y)<3.2){
+      if(Math.hypot(r.p.x-ship.x,r.p.y-ship.y)<5.2){ /* Sonic rules: graze the rim and it counts */
         r.set.got++; ship.shield=Math.min(100,ship.shield+15); score+=300; sfx.ring(r.set.got);
         explode(r.p,26,0xffd86a,12,.7,0); flashFx(r.p,4,0xffe29a,.35); if(ship.shield>50) lowWarned=false;
       }
@@ -989,6 +1044,7 @@ let last=performance.now();
 function frame(now){
   requestAnimationFrame(frame);
   const dt=Math.min(.05,Math.max(0,(now-last)/1000)); last=now; tAcc+=dt;
+  pollPad();
   if(state==='play'||state==='dead') update(dt);
   else if(state==='title') idle(dt);
   renderer.render(scene,camera);
@@ -997,7 +1053,7 @@ function frame(now){
 resize();
 document.body.dataset.state='title'; document.body.dataset.boss='0';
 showScreen('title');
-if(GOD) window.__sl={ship,enemies,ebul,pbul,rings,keys,info:()=>({state,phase,stage,score,kills,boss,scriptI,scriptLen:script.length})};
+if(GOD) window.__sl={ship,enemies,ebul,pbul,rings,keys,pad,tilt,info:()=>({state,phase,stage,score,kills,boss,scriptI,scriptLen:script.length})};
 requestAnimationFrame(frame);
 })();
 </script>
