@@ -876,7 +876,7 @@ document.addEventListener('visibilitychange',()=>{ if(document.hidden&&state==='
 
 /* ================= screens / flow ================= */
 function showScreen(kind){
-  screenKind=kind; el.screen.hidden=false; el.go.hidden=false;
+  screenKind=kind; el.screen.hidden=false; el.screen.style.display=''; el.go.hidden=false;
   if(kind==='title'){ el.sTitle.textContent='STARLANCE'; el.sTag.textContent='DEFEND THE LYRA BELT'; el.go.textContent='LAUNCH'; el.how.hidden=false; }
   else if(kind==='pause'){ el.sTitle.textContent='PAUSED'; el.sTag.textContent=''; el.go.textContent='RESUME'; el.how.hidden=false; }
   else{
@@ -885,7 +885,7 @@ function showScreen(kind){
     el.go.textContent='RETRY'; el.how.hidden=true;
   }
 }
-function hideScreen(){ screenKind=null; el.screen.hidden=true; }
+function hideScreen(){ screenKind=null; el.screen.hidden=true; el.screen.style.display='none'; }
 function pauseGame(){ if(state!=='play') return; state='paused'; document.body.dataset.state='paused'; for(const k in keys) keys[k]=false; mouseFire=false; showScreen('pause'); }
 function resumeGame(){ if(state!=='paused') return; state='play'; document.body.dataset.state='play'; hideScreen(); last=performance.now(); }
 function togglePause(){ if(state==='play') pauseGame(); else if(state==='paused') resumeGame(); }
