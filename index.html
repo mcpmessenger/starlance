@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#04050d">
   <title>Starlance — 3D Rail Shooter</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,6 +21,7 @@
   color-scheme:dark;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
 html,body{height:100%;margin:0;overflow:hidden}
 body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}
 #c{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0}
@@ -245,6 +250,20 @@ function resize(){
 }
 window.addEventListener('resize',resize);
 window.addEventListener('orientationchange',resize);
+function goFullscreen(){
+  try{
+    if(!document.fullscreenElement&&document.documentElement.requestFullscreen){
+      const r=document.documentElement.requestFullscreen();
+      if(r&&r.catch) r.catch(()=>{});
+    }
+    if(screen.orientation&&screen.orientation.lock){
+      const l=screen.orientation.lock('landscape');
+      if(l&&l.catch) l.catch(()=>{});
+    }
+  }catch(_){}
+}
+function maybeFullscreen(){ if(touchMode&&window.innerWidth>window.innerHeight) goFullscreen(); }
+window.addEventListener('orientationchange',()=>setTimeout(maybeFullscreen,60));
 
 function makeDot(){
   const c=document.createElement('canvas'); c.width=c.height=64; const g=c.getContext('2d');
@@ -793,6 +812,7 @@ const STICK_R=52;
 el.pad.addEventListener('pointerdown',e=>{
   e.preventDefault();
   if(e.pointerType==='mouse'){ if(e.button===0) mouseFire=true; return; }
+  maybeFullscreen();
   setTouchMode(true);
   if(stickId===null&&e.clientX<window.innerWidth*.62){
     stickId=e.pointerId; sox=e.clientX; soy=e.clientY; touch.x=touch.y=0;
@@ -849,6 +869,7 @@ el.muteBtn.addEventListener('click',()=>{
 el.go.addEventListener('pointerdown',e=>{ if(e.pointerType==='touch'||e.pointerType==='pen') setTouchMode(true); else if(e.pointerType==='mouse') setTouchMode(false); });
 el.go.addEventListener('click',()=>{
   el.go.blur(); audioInit(); if(tilt.on){ tilt.b0=null; tilt.g0=null; }
+  if(touchMode) goFullscreen();
   if(screenKind==='pause') resumeGame(); else if(screenKind) startGame();
 });
 document.addEventListener('visibilitychange',()=>{ if(document.hidden&&state==='play') pauseGame(); });
