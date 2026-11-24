@@ -1100,6 +1100,7 @@ const btnJump=$('btnJump'), btnMine=$('btnMine');
 const btnReturn=$('btnReturn'), btnCall=$('btnCall');
 const launchVid=$('launchVid');
 const surfMineables=[];
+const surfaceFx=[];
 let surfGrav=1, cargo=0;
 
 function setPrompt(t){
@@ -1111,34 +1112,123 @@ function surfHeight(x,z){
   const m=clamp((d-14)/30,0,1); /* flat landing pad near spawn */
   return (Math.sin(x*.055)*Math.cos(z*.045)*2.2+Math.sin(x*.013+1.7)*Math.cos(z*.017+.6)*4.5)*m;
 }
+function surfMaterial(color,opts){
+  return new THREE.MeshStandardMaterial(Object.assign({color,roughness:.94,metalness:.04,flatShading:true},opts||{}));
+}
+function surfLine(points,color,opacity){
+  const geo=new THREE.BufferGeometry().setFromPoints(points);
+  const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color,transparent:true,opacity:opacity==null?.5:opacity,depthWrite:false}));
+  surfGroup.add(line); return line;
+}
+function addCrack(x,z,scale,phase){
+  const pts=[], branches=[]; let px=x, pz=z, ang=phase;
+  pts.push(new THREE.Vector3(px,surfHeight(px,pz)+.09,pz));
+  const n=2+Math.floor(Math.random()*4);
+  for(let i=0;i<n;i++){
+    ang+=rand(-.55,.55); px+=Math.cos(ang)*scale*rand(.65,1.2); pz+=Math.sin(ang)*scale*rand(.65,1.2);
+    pts.push(new THREE.Vector3(px,surfHeight(px,pz)+.1,pz));
+    if(i===1&&Math.random()<.7){
+      const ba=ang+rand(1.7,2.8), bl=scale*rand(.65,1.25);
+      branches.push([new THREE.Vector3(px,surfHeight(px,pz)+.11,pz),new THREE.Vector3(px+Math.cos(ba)*bl,surfHeight(px+Math.cos(ba)*bl,pz+Math.sin(ba)*bl)+.11,pz+Math.sin(ba)*bl)]);
+    }
+  }
+  surfLine(pts,0x241b2b,.48);
+  for(const branch of branches) surfLine(branch,0xff7440,.22);
+}
+function addPlate(x,z,w,d,rot,raised){
+  const tones=[0x6d302e,0x7e3830,0x91432e,0x5b2d31];
+  const plate=new THREE.Mesh(new THREE.BoxGeometry(w,raised||.16,d),surfMaterial(tones[Math.floor(Math.random()*tones.length)],{roughness:1}));
+  const y=surfHeight(x,z)+.045; plate.position.set(x,y,z); plate.rotation.set(rand(-.025,.025),rot,rand(-.02,.02)); surfGroup.add(plate);
+  const seam=[new THREE.Vector3(x-w*.34*Math.cos(rot),y+(raised||.16)*.52+.025,z-w*.34*Math.sin(rot)),new THREE.Vector3(x+w*.25*Math.cos(rot),y+(raised||.16)*.52+.025,z+w*.25*Math.sin(rot))];
+  surfLine(seam,0xd86b43,.2); return plate;
+}
+function addScrub(x,z,scale){
+  const g=new THREE.Group(), stemMat=surfMaterial(0x3a2028,{roughness:1}), emberMat=surfMaterial(0x7c2d2a,{roughness:1});
+  const count=4+Math.floor(Math.random()*4);
+  for(let i=0;i<count;i++){
+    const h=scale*rand(.45,1.25), shard=new THREE.Mesh(new THREE.ConeGeometry(scale*rand(.06,.12),h,5),i%3?stemMat:emberMat);
+    const a=i/count*TAU+rand(-.45,.45); shard.position.set(Math.cos(a)*scale*rand(.1,.5),h*.5,Math.sin(a)*scale*rand(.1,.5)); shard.rotation.set(rand(-.35,.35),a,rand(-.28,.28)); g.add(shard);
+  }
+  g.position.set(x,surfHeight(x,z)+.02,z); surfGroup.add(g);
+}
+function addBoulder(x,z,scale,decorative){
+  const g=new THREE.Group(), mats=[surfMaterial(0x3a2734),surfMaterial(0x51303a),surfMaterial(0x70403c),surfMaterial(0x8a493b)];
+  const count=decorative?2+Math.floor(Math.random()*3):1;
+  for(let i=0;i<count;i++){
+    const s=scale*rand(.55,1), rock=new THREE.Mesh(new THREE.DodecahedronGeometry(s,0),mats[Math.floor(Math.random()*mats.length)]);
+    rock.position.set((i-(count-1)/2)*scale*.48,s*.35,rand(-.35,.35)*scale); rock.scale.y=rand(.55,.95); rock.rotation.set(rand(0,3),rand(0,TAU),rand(0,3));
+    if(!decorative){ rock.userData={mine:true,kind:'rock'}; surfMineables.push(rock); } g.add(rock);
+  }
+  const shadow=new THREE.Mesh(new THREE.CircleGeometry(scale*(decorative?1.3:1),12),new THREE.MeshBasicMaterial({color:0x211724,transparent:true,opacity:.34,depthWrite:false}));
+  shadow.rotation.x=-Math.PI/2; shadow.position.y=.03; g.add(shadow); g.position.set(x,surfHeight(x,z),z); surfGroup.add(g); return g;
+}
+function addCrystalCluster(x,z,scale){
+  const g=new THREE.Group();
+  const glow=new THREE.Sprite(new THREE.SpriteMaterial({map:makeGlow(180,48,255),transparent:true,opacity:.2,blending:THREE.AdditiveBlending,depthWrite:false,fog:false}));
+  glow.position.y=scale*.45; glow.scale.set(scale*7,scale*7,1); g.add(glow);
+  const colors=[0xa936e6,0x7527bf,0xd758f3,0x4c23ad], count=3+Math.floor(Math.random()*4);
+  for(let i=0;i<count;i++){
+    const h=scale*rand(1.5,3.9), w=scale*rand(.22,.48), shard=new THREE.Mesh(new THREE.ConeGeometry(w,h,5),surfMaterial(colors[i%colors.length],{emissive:colors[i%colors.length],emissiveIntensity:.75,roughness:.32,metalness:.08}));
+    const a=i/count*TAU+rand(-.45,.45), r=scale*rand(.05,.55); shard.position.set(Math.cos(a)*r,h*.5,Math.sin(a)*r); shard.rotation.set(rand(-.13,.13),a,rand(-.18,.18)); shard.userData={mine:true,kind:'crystal'}; surfMineables.push(shard); g.add(shard);
+  }
+  if(Math.random()<.34){ const light=new THREE.PointLight(0xd96bff,.65,scale*11,2); light.position.y=scale*1.1; g.add(light); }
+  g.position.set(x,surfHeight(x,z),z); surfGroup.add(g); surfaceFx.push({glow,phase:rand(0,TAU),base:scale*7}); return g;
+}
 function buildSurface(colorHex){
   if(surfGroup){ scene.remove(surfGroup); surfGroup=null; }
   surfGroup=new THREE.Group();
   surfMineables.length=0;
+  surfaceFx.length=0;
   beacon=null; beaconRing=null; beaconTip=null; sorn=[]; sornSpawned=false;
-  const col=new THREE.Color(colorHex);
-  const tg=new THREE.PlaneGeometry(340,340,72,72); tg.rotateX(-Math.PI/2);
+  const tg=new THREE.PlaneGeometry(340,340,84,84); tg.rotateX(-Math.PI/2);
   const pos=tg.attributes.position;
   for(let i=0;i<pos.count;i++) pos.setY(i,surfHeight(pos.getX(i),pos.getZ(i)));
   tg.computeVertexNormals();
-  surfGroup.add(new THREE.Mesh(tg,new THREE.MeshLambertMaterial({color:col.clone().multiplyScalar(.5),flatShading:true})));
-  const crysMat=new THREE.MeshLambertMaterial({color:0xb46bff,emissive:0x7a2be0});
-  for(let i=0;i<46;i++){
-    const a=rand(0,TAU), r=rand(18,150), x=Math.cos(a)*r, z=Math.sin(a)*r, h=rand(2,5.5);
-    const c=new THREE.Mesh(new THREE.ConeGeometry(rand(.5,1.3),h,5),crysMat);
-    c.position.set(x,surfHeight(x,z)+h/2-.2,z);
-    c.rotation.set(rand(-.15,.15),rand(0,TAU),rand(-.15,.15));
-    c.userData={mine:true,kind:'crystal'}; surfMineables.push(c);
-    surfGroup.add(c);
+  surfGroup.add(new THREE.Mesh(tg,surfMaterial(0x713632,{roughness:1})));
+  const underlay=new THREE.Mesh(new THREE.CircleGeometry(170,64),new THREE.MeshBasicMaterial({color:0x3a202f,transparent:true,opacity:.22,depthWrite:false}));
+  underlay.rotation.x=-Math.PI/2; underlay.position.y=-.08; surfGroup.add(underlay);
+  /* Uneven plates and bright oxidized seams give the ground the hand-built, cracked look of the reference. */
+  for(let i=0;i<88;i++){
+    const a=rand(0,TAU), r=rand(15,153), x=Math.cos(a)*r, z=Math.sin(a)*r;
+    addPlate(x,z,rand(2.2,8.8),rand(1.4,5.2),rand(0,TAU),rand(.1,.28));
   }
-  const rockMat=new THREE.MeshLambertMaterial({color:0x6b5a52,flatShading:true});
-  for(let i=0;i<34;i++){
-    const a=rand(0,TAU), r=rand(12,155), x=Math.cos(a)*r, z=Math.sin(a)*r, s=rand(.6,2.6);
-    const rk=new THREE.Mesh(new THREE.DodecahedronGeometry(s,0),rockMat);
-    rk.position.set(x,surfHeight(x,z)+s*.4,z); rk.rotation.set(rand(0,3),rand(0,3),rand(0,3));
-    rk.userData={mine:true,kind:'rock'}; surfMineables.push(rk);
-    surfGroup.add(rk);
+  for(let i=0;i<78;i++){
+    const a=rand(0,TAU), r=rand(13,154), x=Math.cos(a)*r, z=Math.sin(a)*r;
+    addCrack(x,z,rand(.7,2.2),rand(0,TAU));
   }
+  /* A denser, readable lane in front of the ship gives the first-person camera immediate ground texture. */
+  for(let i=0;i<32;i++){
+    const x=rand(-22,22), z=rand(-8,-92); addPlate(x,z,rand(3.4,10.5),rand(1.8,6.4),rand(0,TAU),rand(.16,.42));
+  }
+  for(let i=0;i<42;i++){
+    const x=rand(-25,25), z=rand(-10,-108); addCrack(x,z,rand(1.1,3.6),rand(0,TAU));
+  }
+  for(let i=0;i<16;i++){
+    const x=rand(-18,18), z=rand(-4,8); addPlate(x,z,rand(3.2,8.2),rand(1.8,4.8),rand(0,TAU),rand(.2,.5));
+    if(i%3===0) addCrack(x,z,rand(1.2,2.6),rand(0,TAU));
+  }
+  for(let i=0;i<30;i++){
+    const a=rand(0,TAU), r=rand(18,145); addCrystalCluster(Math.cos(a)*r,Math.sin(a)*r,rand(.7,1.65));
+  }
+  for(let i=0;i<8;i++) addCrystalCluster(rand(-18,18),rand(-12,-58),rand(1.05,2.1));
+  for(let i=0;i<30;i++){
+    const a=rand(0,TAU), r=rand(16,142); addBoulder(Math.cos(a)*r,Math.sin(a)*r,rand(.65,2.7),false);
+  }
+  for(let i=0;i<12;i++){
+    addBoulder(rand(-24,24),rand(-12,-92),rand(1.7,4.8),true);
+  }
+  /* Larger silhouettes frame the play space; low red scrub breaks up the plate rhythm. */
+  for(let i=0;i<22;i++){
+    const a=rand(0,TAU), r=rand(105,158); addBoulder(Math.cos(a)*r,Math.sin(a)*r,rand(2.4,6.4),true);
+  }
+  for(let i=0;i<48;i++){
+    const a=rand(0,TAU), r=rand(18,151); addScrub(Math.cos(a)*r,Math.sin(a)*r,rand(.55,1.7));
+  }
+  /* A warm horizon disk sells the sunset palette even when the player turns away from the flight sky. */
+  const sky=new THREE.Mesh(new THREE.SphereGeometry(480,24,16),new THREE.MeshBasicMaterial({color:0x4b2947,side:THREE.BackSide,fog:false}));
+  surfGroup.add(sky);
+  const sunset=new THREE.Sprite(new THREE.SpriteMaterial({map:makeGlow(255,111,66),transparent:true,opacity:.48,blending:THREE.AdditiveBlending,depthWrite:false,fog:false}));
+  sunset.position.set(-92,58,-170); sunset.scale.set(62,62,1); surfGroup.add(sunset);
   surfShip=buildSurfShip();
   surfShip.position.set(0,surfHeight(0,16),16);
   surfGroup.add(surfShip);
@@ -1183,9 +1273,11 @@ function swapToSurface(){
   surfGroup.visible=true;
   shipRoot.visible=false;
   stars.visible=false; planet.visible=false;
-  scene.background=new THREE.Color(surfColor).multiplyScalar(.32);
-  scene.fog=new THREE.Fog(new THREE.Color(surfColor).multiplyScalar(.5),40,240);
-  walker.x=0; walker.z=8; walker.yaw=0; walker.pitch=0; surfT=0; walker.vy=0; walker.jumpY=0;
+  sun.color.setHex(0xffb184); sun.intensity=1.55;
+  rim.color.setHex(0xc05bff); rim.intensity=.82;
+  scene.background=new THREE.Color(0x4b2947);
+  scene.fog=new THREE.Fog(0x5a3047,34,235);
+  walker.x=0; walker.z=8; walker.yaw=0; walker.pitch=-.1; surfT=0; walker.vy=0; walker.jumpY=0;
   camera.rotation.order='YXZ';
   mode='surface';
   btnJump.hidden=false; btnMine.hidden=false; btnReturn.hidden=false; btnCall.hidden=false;
@@ -1222,6 +1314,8 @@ function swapToFlight(){
   if(surfGroup) surfGroup.visible=false;
   shipRoot.visible=true; shipModel.visible=true;
   stars.visible=true; planet.visible=true;
+  sun.color.setHex(0xffffff); sun.intensity=1.15;
+  rim.color.setHex(0xff5fa0); rim.intensity=.55;
   scene.background=null; scene.fog=null;
   ship.x=0; ship.y=0; ship.vx=0; ship.vy=0; ship.invuln=2;
   for(const k in keys) keys[k]=false;
@@ -1236,11 +1330,18 @@ function resetLanding(){
   mode='flight'; trans=null; clearApproach(); nextApproachT=18;
   if(surfGroup) surfGroup.visible=false;
   shipRoot.visible=true; stars.visible=true; planet.visible=true;
+  sun.color.setHex(0xffffff); sun.intensity=1.15;
+  rim.color.setHex(0xff5fa0); rim.intensity=.55;
   scene.background=null; scene.fog=null;
   fadeEl.style.opacity='0'; setPrompt(''); btnJump.hidden=true; btnMine.hidden=true; btnReturn.hidden=true; btnCall.hidden=true;
 }
 function updateWalker(dt){
   surfT+=dt;
+  for(const fx of surfaceFx){
+    const pulse=.72+.28*Math.sin(surfT*2.4+fx.phase);
+    fx.glow.material.opacity=.15+.13*pulse;
+    fx.glow.scale.set(fx.base*(.92+.08*pulse),fx.base*(.92+.08*pulse),1);
+  }
   if(surfKeys.turnL) walker.yaw+=1.9*dt;
   if(surfKeys.turnR) walker.yaw-=1.9*dt;
   const spd=surfKeys.shift?7.5:4.2;
@@ -1267,11 +1368,12 @@ function tryJump(){
 function tryMine(){
   if(mode!=='surface'||!surfGroup) return;
   let best=null, bd=3.4;
-  for(const o of surfMineables){ const d=Math.hypot(o.position.x-walker.x,o.position.z-walker.z); if(d<bd){ bd=d; best=o; } }
+  const wp=new THREE.Vector3();
+  for(const o of surfMineables){ o.getWorldPosition(wp); const d=Math.hypot(wp.x-walker.x,wp.z-walker.z); if(d<bd){ bd=d; best=o; } }
   if(!best){ comm('DOT','Nothing in reach. Get closer to a rock or crystal.'); return; }
   surfMineables.splice(surfMineables.indexOf(best),1);
-  surfGroup.remove(best);
-  for(let i=0;i<14;i++) spawnP(best.position.x,best.position.y,best.position.z,rand(-2.4,2.4),rand(1,4.4),rand(-2.4,2.4),rand(.3,.7),1,.75,.35);
+  best.getWorldPosition(wp); if(best.parent) best.parent.remove(best);
+  for(let i=0;i<14;i++) spawnP(wp.x,wp.y,wp.z,rand(-2.4,2.4),rand(1,4.4),rand(-2.4,2.4),rand(.3,.7),1,.75,.35);
   const gain=best.userData.kind==='crystal'?3:1;
   cargo+=gain; score+=gain*25;
   if(ac) noise(.25,.2,900);
