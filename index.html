@@ -105,6 +105,8 @@ html.touch .how .tc{display:block}
 .sbtn{position:fixed;right:18px;z-index:4;width:70px;height:70px;border-radius:50%;background:rgba(6,10,24,.72);border:2px solid rgba(125,228,255,.6);color:#cfeeff;font:700 13px/1.2 system-ui,sans-serif;letter-spacing:.08em;display:grid;place-items:center;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none}
 #btnJump{bottom:158px}
 #btnMine{bottom:242px}
+#btnReturn{bottom:326px}
+#btnCall{bottom:410px}
 #launchVid{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:6}
 </style>
 </head>
@@ -150,6 +152,8 @@ html.touch .how .tc{display:block}
   <div id="fade"></div>
   <div id="btnJump" class="sbtn" hidden>JUMP</div>
   <div id="btnMine" class="sbtn" hidden>MINE</div>
+  <div id="btnReturn" class="sbtn" hidden>SHIP</div>
+  <div id="btnCall" class="sbtn" hidden>CALL</div>
   <video id="launchVid" hidden playsinline preload="auto" src="launch.mp4"></video>
 
   <div id="touch">
@@ -1085,11 +1089,12 @@ let approach=null; /* {m,color,name} */
 let nextApproachT=18;
 let surfGroup=null, surfShip=null, surfColor=0x7b5aa8, surfName='', surfT=0;
 const walker={x:0,z:8,yaw:0,pitch:0,vy:0,jumpY:0};
-const surfKeys={f:0,b:0,l:0,r:0,shift:0};
+const surfKeys={f:0,b:0,l:0,r:0,shift:0,turnL:0,turnR:0};
 const surfTouch={mx:0,mz:0};
 const SURF_NAMES=['LYRA PRIME','KESTREL REACH','VELA DRIFT','ORISON'];
 const promptEl=$('prompt'), fadeEl=$('fade');
 const btnJump=$('btnJump'), btnMine=$('btnMine');
+const btnReturn=$('btnReturn'), btnCall=$('btnCall');
 const launchVid=$('launchVid');
 const surfMineables=[];
 let surfGrav=1, cargo=0;
@@ -1107,6 +1112,7 @@ function buildSurface(colorHex){
   if(surfGroup){ scene.remove(surfGroup); surfGroup=null; }
   surfGroup=new THREE.Group();
   surfMineables.length=0;
+  beacon=null; beaconRing=null; beaconTip=null; sorn=[]; sornSpawned=false;
   const col=new THREE.Color(colorHex);
   const tg=new THREE.PlaneGeometry(340,340,72,72); tg.rotateX(-Math.PI/2);
   const pos=tg.attributes.position;
@@ -1188,7 +1194,7 @@ function swapToSurface(){
   walker.x=0; walker.z=8; walker.yaw=0; walker.pitch=0; surfT=0; walker.vy=0; walker.jumpY=0;
   camera.rotation.order='YXZ';
   mode='surface';
-  if(touchMode){ btnJump.hidden=false; btnMine.hidden=false; }
+  btnJump.hidden=false; btnMine.hidden=false; btnReturn.hidden=false; btnCall.hidden=false;
   comm('DOT','Touchdown on '+surfName+'. Gravity: '+(surfGrav<=0.4?'LOW — big floaty jumps.':surfGrav>=1.3?'HEAVY — short hops.':'Earth-like.'));
 }
 let vidPlaying=false;
@@ -1227,7 +1233,7 @@ function swapToFlight(){
   for(const k in keys) keys[k]=false;
   nextApproachT=rand(40,60);
   mode='flight';
-  btnJump.hidden=true; btnMine.hidden=true;
+  btnJump.hidden=true; btnMine.hidden=true; btnReturn.hidden=true; btnCall.hidden=true;
   setPrompt('');
   comm('DOT','Airborne. Back in the black.');
 }
@@ -1237,10 +1243,12 @@ function resetLanding(){
   if(surfGroup) surfGroup.visible=false;
   shipRoot.visible=true; stars.visible=true; planet.visible=true;
   scene.background=null; scene.fog=null;
-  fadeEl.style.opacity='0'; setPrompt(''); btnJump.hidden=true; btnMine.hidden=true;
+  fadeEl.style.opacity='0'; setPrompt(''); btnJump.hidden=true; btnMine.hidden=true; btnReturn.hidden=true; btnCall.hidden=true;
 }
 function updateWalker(dt){
   surfT+=dt;
+  if(surfKeys.turnL) walker.yaw+=1.9*dt;
+  if(surfKeys.turnR) walker.yaw-=1.9*dt;
   const spd=surfKeys.shift?7.5:4.2;
   let mx=(surfKeys.r?1:0)-(surfKeys.l?1:0)+surfTouch.mx;
   let mz=(surfKeys.f?1:0)-(surfKeys.b?1:0)+surfTouch.mz;
@@ -1256,7 +1264,7 @@ function updateWalker(dt){
   if(camera.fov!==62){ camera.fov=62; camera.updateProjectionMatrix(); }
   const dShip=Math.hypot(walker.x-surfShip.position.x,walker.z-surfShip.position.z);
   if(dShip<5) setPrompt(touchMode?'TAP TO DEPART':'PRESS E TO DEPART');
-  else if(surfT<9) setPrompt(touchMode?'LEFT move · RIGHT look · JUMP / MINE buttons':'WASD MOVE · SPACE JUMP · F MINE · MOUSE LOOK');
+  else if(surfT<9) setPrompt(touchMode?'LEFT move · RIGHT look · JUMP MINE SHIP CALL buttons':'WASD MOVE · ARROWS TURN · SPACE JUMP · F MINE · C CALL · R SHIP');
   else setPrompt('');
 }
 function tryJump(){
@@ -1277,6 +1285,92 @@ function tryMine(){
 }
 btnJump.addEventListener('pointerdown',e=>{ e.preventDefault(); tryJump(); });
 btnMine.addEventListener('pointerdown',e=>{ e.preventDefault(); tryMine(); });
+function returnToShip(){
+  if(mode!=='surface'||trans) return;
+  fadeEl.style.background='#000000';
+  fadeEl.style.transition='opacity .18s';
+  fadeEl.style.opacity='.9';
+  setTimeout(()=>{
+    walker.x=0; walker.z=11.5; walker.yaw=Math.PI; walker.vy=0; walker.jumpY=0;
+    fadeEl.style.opacity='0';
+    comm('DOT','Back at the ship.');
+  },190);
+}
+let beacon=null, beaconRing=null, beaconTip=null, beaconT=0, sorn=[], sornSpawned=false;
+function buildSorn(robeColor){
+  const g=new THREE.Group();
+  const skin=new THREE.MeshLambertMaterial({color:0xcdb69c});
+  const robe=new THREE.MeshLambertMaterial({color:robeColor});
+  const body=new THREE.Mesh(new THREE.ConeGeometry(.55,1.5,8),robe); body.position.y=.75; g.add(body);
+  const neck=new THREE.Mesh(new THREE.CylinderGeometry(.09,.12,.42,6),skin); neck.position.y=1.68; g.add(neck);
+  const head=new THREE.Mesh(new THREE.SphereGeometry(.32,12,10),skin); head.scale.set(1,1.25,.95); head.position.y=2.05; g.add(head);
+  const eyeMat=new THREE.MeshBasicMaterial({color:0x14100c});
+  for(const sx of [-1,1]){ const eye=new THREE.Mesh(new THREE.SphereGeometry(.065,8,6),eyeMat); eye.position.set(sx*.12,2.1,.27); g.add(eye); }
+  const arms={};
+  for(const sx of [-1,1]){
+    const pivot=new THREE.Group(); pivot.position.set(sx*.34,1.5,0);
+    const arm=new THREE.Mesh(new THREE.CylinderGeometry(.045,.04,.8,6),skin); arm.position.y=-.36; pivot.add(arm);
+    pivot.rotation.z=sx*-.18;
+    g.add(pivot); arms[sx<0?'L':'R']=pivot;
+  }
+  const pack=new THREE.Mesh(new THREE.BoxGeometry(.34,.42,.16),new THREE.MeshLambertMaterial({color:0x8a6f4d})); pack.position.set(.1,1.15,-.3); g.add(pack);
+  return {g,armR:arms.R};
+}
+function callAliens(){
+  if(mode!=='surface'||trans||beacon) return;
+  beacon=new THREE.Group();
+  const metal=new THREE.MeshLambertMaterial({color:0x8a919c});
+  const base=new THREE.Mesh(new THREE.CylinderGeometry(.32,.42,.16,8),metal); base.position.y=.08; beacon.add(base);
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(.05,.07,3.2,6),metal); pole.position.y=1.7; beacon.add(pole);
+  beaconTip=new THREE.Mesh(new THREE.SphereGeometry(.17,10,8),new THREE.MeshBasicMaterial({color:0x7de4ff})); beaconTip.position.y=3.4; beacon.add(beaconTip);
+  beaconRing=new THREE.Mesh(new THREE.RingGeometry(.92,1,40),new THREE.MeshBasicMaterial({color:0x7de4ff,transparent:true,opacity:.5,side:THREE.DoubleSide,depthWrite:false,fog:false}));
+  beaconRing.rotation.x=-Math.PI/2; beaconRing.position.y=.18; beacon.add(beaconRing);
+  beacon.position.set(walker.x,surfHeight(walker.x,walker.z),walker.z);
+  surfGroup.add(beacon);
+  beaconT=0; sornSpawned=false;
+  if(ac) noise(.4,.1,1400);
+  comm('DOT','Beacon lit. If anything lives here, it just noticed.');
+}
+function spawnSorn(){
+  const robeCols=[0xb3a284,0xa89a80,0xbfb096];
+  for(let i=0;i<3;i++){
+    const s=buildSorn(robeCols[i]);
+    const a=rand(0,TAU), r=55;
+    s.g.position.set(beacon.position.x+Math.cos(a)*r,0,beacon.position.z+Math.sin(a)*r);
+    s.g.position.y=surfHeight(s.g.position.x,s.g.position.z);
+    const sa=i/3*TAU+.6;
+    s.slot={x:beacon.position.x+Math.cos(sa)*3.6,z:beacon.position.z+Math.sin(sa)*3.6};
+    s.phase=rand(0,TAU); s.greeter=(i===0);
+    surfGroup.add(s.g);
+    sorn.push(s);
+  }
+  comm('DOT','Movement on the horizon. Three figures approaching.');
+}
+function updateSorn(dt){
+  if(beacon){
+    beaconT+=dt;
+    if(beaconTip) beaconTip.scale.setScalar(1+.3*Math.sin(beaconT*6));
+    if(beaconRing){ const rt=(beaconT%2)/2; beaconRing.scale.setScalar(1+rt*24); beaconRing.material.opacity=.5*(1-rt); }
+    if(!sornSpawned&&beaconT>4){ sornSpawned=true; spawnSorn(); }
+  }
+  for(const s of sorn){
+    const p=s.g.position;
+    const dx=s.slot.x-p.x, dz=s.slot.z-p.z, d=Math.hypot(dx,dz);
+    if(d>.35){
+      const step=Math.min(2.3*dt,d);
+      p.x+=dx/d*step; p.z+=dz/d*step;
+      p.y=surfHeight(p.x,p.z)+Math.abs(Math.sin(beaconT*7+s.phase))*.06;
+      s.g.rotation.y=Math.atan2(dx,dz);
+      s.armR.rotation.z=-.18+Math.sin(beaconT*7+s.phase)*.12;
+    } else {
+      p.y=surfHeight(p.x,p.z)+Math.sin(beaconT*1.6+s.phase)*.02;
+      s.g.rotation.y=Math.atan2(walker.x-p.x,walker.z-p.z);
+      if(s.greeter) s.armR.rotation.z=2.35+Math.sin(beaconT*5)*.35;
+    }
+  }
+}
+btnReturn.addEventListener('pointerdown',e=>{ e.preventDefault(); returnToShip(); });
+btnCall.addEventListener('pointerdown',e=>{ e.preventDefault(); callAliens(); });
 function surfaceFrame(dt){
   if(trans){
     trans.t+=dt;
@@ -1288,6 +1382,7 @@ function surfaceFrame(dt){
   }
   if(mode!=='surface'||state!=='play') return;
   updateWalker(dt);
+  updateSorn(dt);
   updateParticles(dt);
 }
 /* surface input */
@@ -1300,18 +1395,24 @@ window.addEventListener('keydown',e=>{
   if(mode==='surface'){
     if(e.code==='Space'&&!e.repeat){ e.preventDefault(); tryJump(); }
     if(e.code==='KeyF'&&!e.repeat) tryMine();
+    if(e.code==='KeyR'&&!e.repeat) returnToShip();
+    if(e.code==='KeyC'&&!e.repeat) callAliens();
     if(e.code==='KeyW'||e.code==='ArrowUp') surfKeys.f=1;
     if(e.code==='KeyS'||e.code==='ArrowDown') surfKeys.b=1;
-    if(e.code==='KeyA'||e.code==='ArrowLeft') surfKeys.l=1;
-    if(e.code==='KeyD'||e.code==='ArrowRight') surfKeys.r=1;
+    if(e.code==='KeyA') surfKeys.l=1;
+    if(e.code==='ArrowLeft'||e.code==='KeyQ') surfKeys.turnL=1;
+    if(e.code==='KeyD') surfKeys.r=1;
+    if(e.code==='ArrowRight') surfKeys.turnR=1;
     if(e.code==='ShiftLeft'||e.code==='ShiftRight') surfKeys.shift=1;
   }
 });
 window.addEventListener('keyup',e=>{
   if(e.code==='KeyW'||e.code==='ArrowUp') surfKeys.f=0;
   if(e.code==='KeyS'||e.code==='ArrowDown') surfKeys.b=0;
-  if(e.code==='KeyA'||e.code==='ArrowLeft') surfKeys.l=0;
-  if(e.code==='KeyD'||e.code==='ArrowRight') surfKeys.r=0;
+  if(e.code==='KeyA') surfKeys.l=0;
+  if(e.code==='ArrowLeft'||e.code==='KeyQ') surfKeys.turnL=0;
+  if(e.code==='KeyD') surfKeys.r=0;
+  if(e.code==='ArrowRight') surfKeys.turnR=0;
   if(e.code==='ShiftLeft'||e.code==='ShiftRight') surfKeys.shift=0;
 });
 document.addEventListener('mousemove',e=>{
