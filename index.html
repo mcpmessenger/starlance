@@ -1214,7 +1214,7 @@ function updateWalker(dt){
   if(camera.fov!==62){ camera.fov=62; camera.updateProjectionMatrix(); }
   const dShip=Math.hypot(walker.x-surfShip.position.x,walker.z-surfShip.position.z);
   if(dShip<5) setPrompt('PRESS E TO DEPART');
-  else if(surfT<5) setPrompt(touchMode?'DRAG right side to look · LEFT side to move':'WASD MOVE · MOUSE LOOK · CLICK FOR POINTER LOCK');
+  else if(surfT<9) setPrompt(touchMode?'DRAG right side to look · LEFT side to move':'WASD MOVE · MOUSE LOOK · CLICK FOR POINTER LOCK');
   else setPrompt('');
 }
 function surfaceFrame(dt){
@@ -1257,6 +1257,16 @@ document.addEventListener('mousemove',e=>{
     walker.pitch=clamp(walker.pitch-e.movementY*.0023,-1.2,1.2);
   }
 });
+let mDrag=null;
+el.pad.addEventListener('pointerdown',e=>{ if(mode==='surface'&&e.pointerType==='mouse') mDrag={x:e.clientX,y:e.clientY}; });
+document.addEventListener('pointermove',e=>{
+  if(mDrag&&mode==='surface'&&document.pointerLockElement!==el.pad){
+    walker.yaw-=(e.clientX-mDrag.x)*.005;
+    walker.pitch=clamp(walker.pitch-(e.clientY-mDrag.y)*.005,-1.2,1.2);
+    mDrag={x:e.clientX,y:e.clientY};
+  }
+});
+window.addEventListener('pointerup',()=>{ mDrag=null; });
 let lookId=null, lookLX=0, lookLY=0, moveId=null, moveSX=0, moveSY=0;
 el.pad.addEventListener('pointerdown',e=>{
   if(mode!=='surface') return;
@@ -1280,7 +1290,7 @@ promptEl.addEventListener('pointerdown',e=>{
   if(mode==='flight'&&approach&&approach.m.position.z>-300) startLanding();
   else if(mode==='surface'&&!trans&&surfShip&&Math.hypot(walker.x-surfShip.position.x,walker.z-surfShip.position.z)<5) startTakeoff();
 });
-if(GOD) window.__slLand={spawnApproach,startLanding,startTakeoff,info:()=>({mode,approach:!!approach,trans:!!trans})};
+if(GOD) window.__slLand={spawnApproach,startLanding,startTakeoff,info:()=>({mode,approach:!!approach,trans:!!trans,walker:{x:walker.x,z:walker.z,yaw:walker.yaw},surfT})};
 
 /* ================= main loop ================= */
 let last=performance.now();
