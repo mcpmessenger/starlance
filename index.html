@@ -98,6 +98,10 @@ html.touch .how .tc{display:block}
 @media (prefers-reduced-motion:reduce){#banner,#comm,.bar i{transition:none}}
   #prompt{position:fixed;left:50%;bottom:13%;transform:translateX(-50%);z-index:4;pointer-events:auto;cursor:pointer;background:rgba(6,10,24,.72);border:1px solid rgba(125,228,255,.55);color:#cfeeff;font:600 15px/1.3 system-ui,sans-serif;letter-spacing:.14em;padding:10px 18px;border-radius:10px;text-align:center}
 #fade{position:fixed;inset:0;z-index:4;pointer-events:none;opacity:0;background:#000}
+#prompt{touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none}
+#prompt:not([hidden]){animation:promptPulse 1s ease-in-out infinite}
+@keyframes promptPulse{0%,100%{box-shadow:0 0 0 0 rgba(125,228,255,0)}50%{box-shadow:0 0 20px 3px rgba(125,228,255,.5)}}
+@media(pointer:coarse){#prompt{font-size:18px;padding:18px 30px;bottom:17%;border-width:2px;border-radius:14px}}
 </style>
 </head>
 <body data-state="title" data-boss="0">
@@ -1135,7 +1139,7 @@ function spawnApproach(){
   g.position.set(rand(-14,14),rand(-4,7),-700);
   scene.add(g);
   approach={m:g,color:colorHex,name:SURF_NAMES[idx%SURF_NAMES.length]};
-  comm('DOT',approach.name+' in range. Press L to land.');
+  comm('DOT',approach.name+' in range. '+(touchMode?'Tap the button to land.':'Press L to land.'));
 }
 function clearApproach(){ if(approach){ scene.remove(approach.m); approach=null; } }
 function updateApproach(dt){
@@ -1147,7 +1151,7 @@ function updateApproach(dt){
   approach.m.position.z+=44*sp*dt;
   approach.m.rotation.y+=dt*.05;
   const z=approach.m.position.z;
-  if(z>-300) setPrompt(approach.name+' — PRESS L TO LAND');
+  if(z>-300) setPrompt(approach.name+(touchMode?' — TAP TO LAND':' — PRESS L TO LAND'));
   if(z>80){ clearApproach(); nextApproachT=rand(35,55); setPrompt(''); comm('DOT','Planet window missed.'); }
 }
 function startLanding(){
@@ -1213,7 +1217,7 @@ function updateWalker(dt){
   camera.rotation.set(walker.pitch,walker.yaw,0);
   if(camera.fov!==62){ camera.fov=62; camera.updateProjectionMatrix(); }
   const dShip=Math.hypot(walker.x-surfShip.position.x,walker.z-surfShip.position.z);
-  if(dShip<5) setPrompt('PRESS E TO DEPART');
+  if(dShip<5) setPrompt(touchMode?'TAP TO DEPART':'PRESS E TO DEPART');
   else if(surfT<9) setPrompt(touchMode?'DRAG right side to look · LEFT side to move':'WASD MOVE · MOUSE LOOK · CLICK FOR POINTER LOCK');
   else setPrompt('');
 }
@@ -1285,11 +1289,12 @@ function surfPointerEnd(e){
 }
 el.pad.addEventListener('pointerup',surfPointerEnd);
 el.pad.addEventListener('pointercancel',surfPointerEnd);
-promptEl.addEventListener('pointerdown',e=>{
-  e.preventDefault();
+function promptAction(){
   if(mode==='flight'&&approach&&approach.m.position.z>-300) startLanding();
   else if(mode==='surface'&&!trans&&surfShip&&Math.hypot(walker.x-surfShip.position.x,walker.z-surfShip.position.z)<5) startTakeoff();
-});
+}
+promptEl.addEventListener('pointerdown',e=>{ e.preventDefault(); promptAction(); });
+promptEl.addEventListener('click',()=>{ promptAction(); });
 if(GOD) window.__slLand={spawnApproach,startLanding,startTakeoff,info:()=>({mode,approach:!!approach,trans:!!trans,walker:{x:walker.x,z:walker.z,yaw:walker.yaw},surfT})};
 
 /* ================= main loop ================= */
