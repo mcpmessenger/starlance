@@ -107,6 +107,7 @@ html.touch .how .tc{display:block}
 #btnMine{bottom:242px}
 #btnReturn{bottom:326px}
 #btnCall{bottom:410px}
+@media (max-height:500px){.sbtn{width:54px;height:54px;font-size:11px}#btnJump{bottom:120px}#btnMine{bottom:180px}#btnReturn{bottom:240px}#btnCall{bottom:300px}}
 #launchVid{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:6}
 </style>
 </head>
@@ -1351,9 +1352,10 @@ function callAliens(){
 }
 function spawnSorn(){
   const robeCols=[0xb3a284,0xa89a80,0xbfb096];
+  const baseA=rand(0,TAU);
   for(let i=0;i<3;i++){
     const s=buildSorn(robeCols[i]);
-    const a=rand(0,TAU), r=55;
+    const a=baseA+(i-1)*.38, r=55+(i-1)*3;
     s.g.position.set(beacon.position.x+Math.cos(a)*r,0,beacon.position.z+Math.sin(a)*r);
     s.g.position.y=surfHeight(s.g.position.x,s.g.position.z);
     const sa=i/3*TAU+.6;
