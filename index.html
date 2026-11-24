@@ -180,6 +180,8 @@ html.touch .how .tc{display:block}
   <!-- Three.js r128 with offline fallback -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>window.THREE || document.write('<script src="three.min.js"><\/script>')</script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script>if(window.THREE&&!THREE.GLTFLoader) document.write('<script src="GLTFLoader.js"><\/script>')</script>
 
   <!-- Starlance Game Engine -->
   <script>
@@ -1297,7 +1299,7 @@ function returnToShip(){
   },190);
 }
 let beacon=null, beaconRing=null, beaconTip=null, beaconT=0, sorn=[], sornSpawned=false;
-function buildSorn(robeColor){
+function buildSornProc(robeColor){
   const g=new THREE.Group();
   const skin=new THREE.MeshLambertMaterial({color:0xcdb69c});
   const robe=new THREE.MeshLambertMaterial({color:robeColor});
@@ -1314,7 +1316,23 @@ function buildSorn(robeColor){
     g.add(pivot); arms[sx<0?'L':'R']=pivot;
   }
   const pack=new THREE.Mesh(new THREE.BoxGeometry(.34,.42,.16),new THREE.MeshLambertMaterial({color:0x8a6f4d})); pack.position.set(.1,1.15,-.3); g.add(pack);
-  return {g,armR:arms.R};
+  return {g,armR:arms.R,armSet:v=>{arms.R.rotation.z=v;}};
+}
+let sornGLB=null;
+if(window.THREE&&THREE.GLTFLoader){
+  new THREE.GLTFLoader().load('sorn.glb',gltf=>{ sornGLB=gltf.scene; },undefined,()=>{ sornGLB=null; });
+}
+function buildSornGLB(){
+  const g=new THREE.Group();
+  const inner=sornGLB.clone(true);
+  inner.scale.setScalar(.94);
+  g.add(inner);
+  const arm=inner.getObjectByName('ArmRG');
+  return {g,armR:arm,armSet:v=>{ if(arm) arm.rotation.z=v; }};
+}
+function buildSorn(robeColor){
+  if(sornGLB) return buildSornGLB();
+  return buildSornProc(robeColor);
 }
 function callAliens(){
   if(mode!=='surface'||trans||beacon) return;
@@ -1361,11 +1379,11 @@ function updateSorn(dt){
       p.x+=dx/d*step; p.z+=dz/d*step;
       p.y=surfHeight(p.x,p.z)+Math.abs(Math.sin(beaconT*7+s.phase))*.06;
       s.g.rotation.y=Math.atan2(dx,dz);
-      s.armR.rotation.z=-.18+Math.sin(beaconT*7+s.phase)*.12;
+      s.armSet(-.18+Math.sin(beaconT*7+s.phase)*.12);
     } else {
       p.y=surfHeight(p.x,p.z)+Math.sin(beaconT*1.6+s.phase)*.02;
       s.g.rotation.y=Math.atan2(walker.x-p.x,walker.z-p.z);
-      if(s.greeter) s.armR.rotation.z=2.35+Math.sin(beaconT*5)*.35;
+      if(s.greeter) s.armSet(2.35+Math.sin(beaconT*5)*.35);
     }
   }
 }
