@@ -102,6 +102,10 @@ html.touch .how .tc{display:block}
 #prompt:not([hidden]){animation:promptPulse 1s ease-in-out infinite}
 @keyframes promptPulse{0%,100%{box-shadow:0 0 0 0 rgba(125,228,255,0)}50%{box-shadow:0 0 20px 3px rgba(125,228,255,.5)}}
 @media(pointer:coarse){#prompt{font-size:18px;padding:18px 30px;bottom:17%;border-width:2px;border-radius:14px}}
+.sbtn{position:fixed;right:18px;z-index:4;width:70px;height:70px;border-radius:50%;background:rgba(6,10,24,.72);border:2px solid rgba(125,228,255,.6);color:#cfeeff;font:700 13px/1.2 system-ui,sans-serif;letter-spacing:.08em;display:grid;place-items:center;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none}
+#btnJump{bottom:158px}
+#btnMine{bottom:242px}
+#launchVid{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:6}
 </style>
 </head>
 <body data-state="title" data-boss="0">
@@ -144,6 +148,9 @@ html.touch .how .tc{display:block}
   <div id="fxFlash"></div>
   <div id="prompt" hidden></div>
   <div id="fade"></div>
+  <div id="btnJump" class="sbtn" hidden>JUMP</div>
+  <div id="btnMine" class="sbtn" hidden>MINE</div>
+  <video id="launchVid" hidden playsinline preload="auto" src="launch.mp4"></video>
 
   <div id="touch">
     <div id="stickHint">MOVE</div>
@@ -313,6 +320,7 @@ planet.position.set(-300,-110,-980); scene.add(planet);
   s.position.set(n[0],n[1],n[2]); s.scale.set(900,900,1); scene.add(s);
 });
 const PLANET_COLORS=[0x3a5fa8,0xa8553a,0x4a9a6a,0x7b5aa8];
+const PLANET_GRAV=[1.0,0.6,1.4,0.35]; /* LYRA PRIME, KESTREL REACH, VELA DRIFT, ORISON */
 
 /* ---- particles ---- */
 const PN=1000;
@@ -1076,11 +1084,15 @@ const TRANS_DUR=2.6;
 let approach=null; /* {m,color,name} */
 let nextApproachT=18;
 let surfGroup=null, surfShip=null, surfColor=0x7b5aa8, surfName='', surfT=0;
-const walker={x:0,z:8,yaw:0,pitch:0};
+const walker={x:0,z:8,yaw:0,pitch:0,vy:0,jumpY:0};
 const surfKeys={f:0,b:0,l:0,r:0,shift:0};
 const surfTouch={mx:0,mz:0};
 const SURF_NAMES=['LYRA PRIME','KESTREL REACH','VELA DRIFT','ORISON'];
 const promptEl=$('prompt'), fadeEl=$('fade');
+const btnJump=$('btnJump'), btnMine=$('btnMine');
+const launchVid=$('launchVid');
+const surfMineables=[];
+let surfGrav=1, cargo=0;
 
 function setPrompt(t){
   if(!t){ promptEl.hidden=true; return; }
@@ -1094,6 +1106,7 @@ function surfHeight(x,z){
 function buildSurface(colorHex){
   if(surfGroup){ scene.remove(surfGroup); surfGroup=null; }
   surfGroup=new THREE.Group();
+  surfMineables.length=0;
   const col=new THREE.Color(colorHex);
   const tg=new THREE.PlaneGeometry(340,340,72,72); tg.rotateX(-Math.PI/2);
   const pos=tg.attributes.position;
@@ -1106,6 +1119,7 @@ function buildSurface(colorHex){
     const c=new THREE.Mesh(new THREE.ConeGeometry(rand(.5,1.3),h,5),crysMat);
     c.position.set(x,surfHeight(x,z)+h/2-.2,z);
     c.rotation.set(rand(-.15,.15),rand(0,TAU),rand(-.15,.15));
+    c.userData={mine:true,kind:'crystal'}; surfMineables.push(c);
     surfGroup.add(c);
   }
   const rockMat=new THREE.MeshLambertMaterial({color:0x6b5a52,flatShading:true});
@@ -1113,6 +1127,7 @@ function buildSurface(colorHex){
     const a=rand(0,TAU), r=rand(12,155), x=Math.cos(a)*r, z=Math.sin(a)*r, s=rand(.6,2.6);
     const rk=new THREE.Mesh(new THREE.DodecahedronGeometry(s,0),rockMat);
     rk.position.set(x,surfHeight(x,z)+s*.4,z); rk.rotation.set(rand(0,3),rand(0,3),rand(0,3));
+    rk.userData={mine:true,kind:'rock'}; surfMineables.push(rk);
     surfGroup.add(rk);
   }
   surfShip=new THREE.Group();
@@ -1138,7 +1153,7 @@ function spawnApproach(){
   g.add(new THREE.Mesh(new THREE.SphereGeometry(57,28,20),new THREE.MeshBasicMaterial({color:colorHex,transparent:true,opacity:.16,side:THREE.BackSide,fog:false,depthWrite:false})));
   g.position.set(rand(-14,14),rand(-4,7),-700);
   scene.add(g);
-  approach={m:g,color:colorHex,name:SURF_NAMES[idx%SURF_NAMES.length]};
+  approach={m:g,color:colorHex,name:SURF_NAMES[idx%SURF_NAMES.length],grav:PLANET_GRAV[idx]};
   comm('DOT',approach.name+' in range. '+(touchMode?'Tap the button to land.':'Press L to land.'));
 }
 function clearApproach(){ if(approach){ scene.remove(approach.m); approach=null; } }
@@ -1156,7 +1171,7 @@ function updateApproach(dt){
 }
 function startLanding(){
   if(!approach||mode!=='flight'||trans) return;
-  surfColor=approach.color; surfName=approach.name;
+  surfColor=approach.color; surfName=approach.name; surfGrav=approach.grav;
   fadeEl.style.background='#'+new THREE.Color(surfColor).getHexString();
   trans={t:0,swapped:false,to:'surface'};
   setPrompt('');
@@ -1170,19 +1185,39 @@ function swapToSurface(){
   stars.visible=false; planet.visible=false;
   scene.background=new THREE.Color(surfColor).multiplyScalar(.32);
   scene.fog=new THREE.Fog(new THREE.Color(surfColor).multiplyScalar(.5),40,240);
-  walker.x=0; walker.z=8; walker.yaw=0; walker.pitch=0; surfT=0;
+  walker.x=0; walker.z=8; walker.yaw=0; walker.pitch=0; surfT=0; walker.vy=0; walker.jumpY=0;
   camera.rotation.order='YXZ';
   mode='surface';
-  comm('DOT','Touchdown on '+surfName+'.');
+  if(touchMode){ btnJump.hidden=false; btnMine.hidden=false; }
+  comm('DOT','Touchdown on '+surfName+'. Gravity: '+(surfGrav<=0.4?'LOW — big floaty jumps.':surfGrav>=1.3?'HEAVY — short hops.':'Earth-like.'));
 }
-function startTakeoff(){
-  if(mode!=='surface'||trans) return;
+let vidPlaying=false;
+function fadeTakeoff(){
   fadeEl.style.background='#000000';
   trans={t:0,swapped:false,to:'flight'};
-  setPrompt('');
-  if(document.pointerLockElement){ try{ document.exitPointerLock(); }catch(_){} }
   if(ac) noise(1.2,.15,240);
 }
+function finishTakeoff(){
+  if(!vidPlaying) return;
+  vidPlaying=false;
+  try{ launchVid.pause(); }catch(_){}
+  launchVid.hidden=true;
+  swapToFlight();
+}
+function startTakeoff(){
+  if(mode!=='surface'||trans||vidPlaying) return;
+  setPrompt('');
+  btnJump.hidden=true; btnMine.hidden=true;
+  if(document.pointerLockElement){ try{ document.exitPointerLock(); }catch(_){} }
+  vidPlaying=true;
+  launchVid.hidden=false;
+  try{ launchVid.currentTime=0; }catch(_){}
+  const p=launchVid.play();
+  if(p&&p.catch) p.catch(()=>{ launchVid.muted=true; const p2=launchVid.play(); if(p2&&p2.catch) p2.catch(()=>{ vidPlaying=false; launchVid.hidden=true; fadeTakeoff(); }); });
+}
+launchVid.addEventListener('ended',finishTakeoff);
+launchVid.addEventListener('error',()=>{ if(vidPlaying){ vidPlaying=false; launchVid.hidden=true; fadeTakeoff(); } });
+launchVid.addEventListener('pointerdown',()=>{ finishTakeoff(); });
 function swapToFlight(){
   if(surfGroup) surfGroup.visible=false;
   shipRoot.visible=true; shipModel.visible=true;
@@ -1192,15 +1227,17 @@ function swapToFlight(){
   for(const k in keys) keys[k]=false;
   nextApproachT=rand(40,60);
   mode='flight';
+  btnJump.hidden=true; btnMine.hidden=true;
   setPrompt('');
   comm('DOT','Airborne. Back in the black.');
 }
 function resetLanding(){
+  if(vidPlaying){ vidPlaying=false; launchVid.hidden=true; try{ launchVid.pause(); }catch(_){} }
   mode='flight'; trans=null; clearApproach(); nextApproachT=18;
   if(surfGroup) surfGroup.visible=false;
   shipRoot.visible=true; stars.visible=true; planet.visible=true;
   scene.background=null; scene.fog=null;
-  fadeEl.style.opacity='0'; setPrompt('');
+  fadeEl.style.opacity='0'; setPrompt(''); btnJump.hidden=true; btnMine.hidden=true;
 }
 function updateWalker(dt){
   surfT+=dt;
@@ -1213,14 +1250,33 @@ function updateWalker(dt){
   walker.z+=(-c*mz-s*mx)*spd*dt;
   const d=Math.hypot(walker.x,walker.z);
   if(d>150){ walker.x*=150/d; walker.z*=150/d; }
-  camera.position.set(walker.x,surfHeight(walker.x,walker.z)+1.7,walker.z);
+  if(walker.jumpY>0||walker.vy>0){ walker.vy-=20*surfGrav*dt; walker.jumpY+=walker.vy*dt; if(walker.jumpY<=0){ walker.jumpY=0; walker.vy=0; } }
+  camera.position.set(walker.x,surfHeight(walker.x,walker.z)+1.7+walker.jumpY,walker.z);
   camera.rotation.set(walker.pitch,walker.yaw,0);
   if(camera.fov!==62){ camera.fov=62; camera.updateProjectionMatrix(); }
   const dShip=Math.hypot(walker.x-surfShip.position.x,walker.z-surfShip.position.z);
   if(dShip<5) setPrompt(touchMode?'TAP TO DEPART':'PRESS E TO DEPART');
-  else if(surfT<9) setPrompt(touchMode?'DRAG right side to look · LEFT side to move':'WASD MOVE · MOUSE LOOK · CLICK FOR POINTER LOCK');
+  else if(surfT<9) setPrompt(touchMode?'LEFT move · RIGHT look · JUMP / MINE buttons':'WASD MOVE · SPACE JUMP · F MINE · MOUSE LOOK');
   else setPrompt('');
 }
+function tryJump(){
+  if(mode==='surface'&&walker.jumpY<=0&&walker.vy<=0){ walker.vy=9; walker.jumpY=0.01; }
+}
+function tryMine(){
+  if(mode!=='surface'||!surfGroup) return;
+  let best=null, bd=3.4;
+  for(const o of surfMineables){ const d=Math.hypot(o.position.x-walker.x,o.position.z-walker.z); if(d<bd){ bd=d; best=o; } }
+  if(!best){ comm('DOT','Nothing in reach. Get closer to a rock or crystal.'); return; }
+  surfMineables.splice(surfMineables.indexOf(best),1);
+  surfGroup.remove(best);
+  for(let i=0;i<14;i++) spawnP(best.position.x,best.position.y,best.position.z,rand(-2.4,2.4),rand(1,4.4),rand(-2.4,2.4),rand(.3,.7),1,.75,.35);
+  const gain=best.userData.kind==='crystal'?3:1;
+  cargo+=gain; score+=gain*25;
+  if(ac) noise(.25,.2,900);
+  comm('DOT','+'+gain+' cargo. Hold: '+cargo+'.');
+}
+btnJump.addEventListener('pointerdown',e=>{ e.preventDefault(); tryJump(); });
+btnMine.addEventListener('pointerdown',e=>{ e.preventDefault(); tryMine(); });
 function surfaceFrame(dt){
   if(trans){
     trans.t+=dt;
@@ -1236,11 +1292,14 @@ function surfaceFrame(dt){
 }
 /* surface input */
 window.addEventListener('keydown',e=>{
+  if(vidPlaying){ finishTakeoff(); return; }
   if(e.code==='KeyL'&&!e.repeat) startLanding();
   if(e.code==='KeyE'&&!e.repeat&&mode==='surface'&&!trans){
     if(Math.hypot(walker.x-surfShip.position.x,walker.z-surfShip.position.z)<5) startTakeoff();
   }
   if(mode==='surface'){
+    if(e.code==='Space'&&!e.repeat){ e.preventDefault(); tryJump(); }
+    if(e.code==='KeyF'&&!e.repeat) tryMine();
     if(e.code==='KeyW'||e.code==='ArrowUp') surfKeys.f=1;
     if(e.code==='KeyS'||e.code==='ArrowDown') surfKeys.b=1;
     if(e.code==='KeyA'||e.code==='ArrowLeft') surfKeys.l=1;
